@@ -1,180 +1,155 @@
 package com.example.project5_randompokemon
 
-import android.graphics.BitmapFactory
+import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.widget.Button
-import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.codepath.asynchttpclient.AsyncHttpClient
 import com.codepath.asynchttpclient.callback.JsonHttpResponseHandler
 import okhttp3.Headers
-import android.widget.ImageView
-import android.widget.TextView
-import kotlin.random.Random
 import org.json.JSONException
-import kotlinx.coroutines.*
-import java.net.URL
-import android.widget.LinearLayout
-
+import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
-    private var tvPokemonName: TextView? = null
-    private var ivPokemonSprite: ImageView? = null
-    private var typesContainer: LinearLayout? = null
-    private var btnGetPokemon: Button? = null
-    private var tvStatus: TextView? = null
-
-    private val typeColors = mapOf(
-        "normal" to "#A8A878",
-        "fire" to "#F08030",
-        "water" to "#6890F0",
-        "electric" to "#F8D030",
-        "grass" to "#78C850",
-        "ice" to "#98D8D8",
-        "fighting" to "#C03028",
-        "poison" to "#A040A0",
-        "ground" to "#E0C068",
-        "flying" to "#A890F0",
-        "psychic" to "#F85888",
-        "bug" to "#A8B820",
-        "rock" to "#B8A038",
-        "ghost" to "#705898",
-        "dragon" to "#7038F8",
-        "dark" to "#705848",
-        "steel" to "#B8B8D0",
-        "fairy" to "#EE99AC"
-    )
+    private lateinit var pokemonRecyclerView: RecyclerView
+    private val pokemonList = mutableListOf<Pokemon>()
+    private lateinit var refreshButton: Button
+    private lateinit var adapter: PokemonAdapter
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvPokemonName = findViewById(R.id.tvPokemonName)
-        ivPokemonSprite = findViewById(R.id.ivPokemonSprite)
-        typesContainer = findViewById(R.id.typesContainer)
-        btnGetPokemon = findViewById(R.id.btnGetPokemon)
-        tvStatus = findViewById(R.id.tvStatus)
+        pokemonRecyclerView = findViewById(R.id.pokemon_recycler_view)
+        refreshButton = findViewById(R.id.btnRefresh)
 
-        btnGetPokemon?.setOnClickListener {
-            getRandomPokemon()
+        adapter = PokemonAdapter(pokemonList)
+        pokemonRecyclerView.adapter = adapter
+        pokemonRecyclerView.layoutManager = LinearLayoutManager(this)
+
+        refreshButton.setOnClickListener {
+            refreshPokemonList()
         }
 
-        getRandomPokemon()
+        // Load initial Pokémon
+        refreshPokemonList()
     }
 
-    private fun getRandomPokemon() {
-        tvStatus?.text = "Loading Pokémon..."
-        val randomPokemonId = Random.nextInt(1, 1000)
-        val apiUrl = "https://pokeapi.co/api/v2/pokemon/$randomPokemonId"
+    private fun refreshPokemonList() {
+        // Disable button during loading to prevent multiple rapid clicks
+        refreshButton.isEnabled = false
+        refreshButton.text = "Loading..."
 
+        fetchMultiplePokemon(20) // Fetch 20 new random Pokémon
+    }
+
+
+    private fun fetchMultiplePokemon(count: Int) {
         val client = AsyncHttpClient()
+        var completedRequests = 0
 
-        client.get(apiUrl, object : JsonHttpResponseHandler() {
-            override fun onSuccess(statusCode: Int, headers: Headers, json: JSON) {
-                try {
+        // Clear the list first
+        pokemonList.clear()
 
-                    val pokemonName = json.jsonObject.getString("name")
-                    val spriteUrl = json.jsonObject.getJSONObject("sprites")
-                        .getString("front_default")
+        // Notify adapter that data changed
+        runOnUiThread {
+            adapter.notifyDataSetChanged()
+        }
+
+        // Fetch multiple random Pokémon
+        for (i in 1..count) {
+            val randomPokemonId = Random.nextInt(1, 1026) // Current number of pokemon +1
+            val apiUrl = "https://pokeapi.co/api/v2/pokemon/$randomPokemonId"
+
+            client.get(apiUrl, object : JsonHttpResponseHandler() {
+                override fun onSuccess(statusCode: Int, headers: Headers, json: JSON) {
+                    try {
+                        // Parse JSON response
+                        val pokemonName = json.jsonObject.getString("name")
+                        val pokemonId = json.jsonObject.getInt("id")
+
+                        // 1/1000 chance for shiny
+                        val isShiny = Random.nextInt(1000) == 0
 
 
-                    val typesArray = json.jsonObject.getJSONArray("types")
-                    val types = mutableListOf<String>()
-
-                    for (i in 0 until typesArray.length()) {
-                        val typeObject = typesArray.getJSONObject(i)
-                        val typeName = typeObject.getJSONObject("type").getString("name")
-                        types.add(typeName)
-                    }
-
-
-                    runOnUiThread {
-                        // Capitalize the first letter of the name
-                        val formattedName = pokemonName.replaceFirstChar { it.uppercase() }
-
-                        tvPokemonName?.text = formattedName
-
-                        // Clear previous types
-                        typesContainer?.removeAllViews()
-
-                        // Add type boxes for each type with appropriate colors
-                        types.forEach { type ->
-                            val typeColor = typeColors[type] ?: "#5F9EA0" // Default color if type not found
-                            val typeView = TextView(this@MainActivity).apply {
-                                text = type.replaceFirstChar { it.uppercase() }
-                                setTextColor(getColor(android.R.color.white))
-                                textSize = 14f
-                                setPadding(32, 16, 32, 16)
-                                // Set background with the type color
-                                setBackgroundColor(android.graphics.Color.parseColor(typeColor))
-                            }
-
-                            val layoutParams = LinearLayout.LayoutParams(
-                                LinearLayout.LayoutParams.WRAP_CONTENT,
-                                LinearLayout.LayoutParams.WRAP_CONTENT
-                            ).apply {
-                                setMargins(0, 0, 16, 0)
-                            }
-
-                            typesContainer?.addView(typeView, layoutParams)
-                        }
-
-                        // Load image
-                        if (spriteUrl != "null") {
-                            loadImageFromUrl(spriteUrl)
+                        val spriteUrl = if (isShiny) {
+                            // Shiny sprite url
+                            "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/$pokemonId.png"
                         } else {
-                            ivPokemonSprite?.setImageBitmap(null)
+                            json.jsonObject.getJSONObject("sprites")
+                                .getString("front_default")
                         }
 
-                        tvStatus?.text = "Pokémon loaded successfully!"
+                        // Get types
+                        val typesArray = json.jsonObject.getJSONArray("types")
+                        val types = mutableListOf<String>()
+
+                        for (i in 0 until typesArray.length()) {
+                            val typeObject = typesArray.getJSONObject(i)
+                            val typeName = typeObject.getJSONObject("type").getString("name")
+                            types.add(typeName)
+                        }
+
+                        // Add Pokémon to list
+                        synchronized(pokemonList) {
+                            pokemonList.add(Pokemon(pokemonName, spriteUrl, types, pokemonId, isShiny))
+                        }
+
+                    } catch (e: JSONException) {
+                        e.printStackTrace()
+                    } finally {
+                        completedRequests++
+                        checkIfAllRequestsCompleted(count)
                     }
-
-                } catch (e: JSONException) {
-                    e.printStackTrace()
-                    runOnUiThread {
-                        tvPokemonName?.text = "Error parsing data"
-                        tvStatus?.text = "Error loading Pokémon data"
-                    }
                 }
-            }
 
-            override fun onFailure(
-                statusCode: Int,
-                headers: Headers?,
-                response: String,
-                throwable: Throwable?
-            ) {
-                runOnUiThread {
-                    tvPokemonName?.text = "Failed to load Pokémon"
-                    tvStatus?.text = "Network error. Try again."
+                override fun onFailure(
+                    statusCode: Int,
+                    headers: Headers?,
+                    response: String,
+                    throwable: Throwable?
+                ) {
+                    completedRequests++
+                    checkIfAllRequestsCompleted(count)
+                    throwable?.printStackTrace()
                 }
-                throwable?.printStackTrace()
-            }
-        })
-    }
-
-    private fun loadImageFromUrl(imageUrl: String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val url = URL(imageUrl)
-                val bitmap = BitmapFactory.decodeStream(url.openStream())
-
-                withContext(Dispatchers.Main) {
-                    ivPokemonSprite?.setImageBitmap(bitmap)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            })
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        tvPokemonName = null
-        ivPokemonSprite = null
-        typesContainer = null
-        btnGetPokemon = null
-        tvStatus = null
+    private fun checkIfAllRequestsCompleted(totalRequests: Int) {
+        if (pokemonList.size == totalRequests) {
+            // All requests completed, update RecyclerView
+            runOnUiThread {
+                // Sort by Pokémon ID / Dex number and update adapter
+                val sortedList = pokemonList.sortedBy { it.id }
+                pokemonList.clear()
+                pokemonList.addAll(sortedList)
+                adapter.notifyDataSetChanged()
+
+                // Re-enable refresh button
+                refreshButton.isEnabled = true
+                refreshButton.text = "Refresh"
+            }
+        }
+    }
+    private fun setupRecyclerView() {
+        // Sort by Dex number / ID
+        val sortedList = pokemonList.sortedBy { it.id }
+
+        val adapter = PokemonAdapter(sortedList)
+        pokemonRecyclerView.adapter = adapter
+        pokemonRecyclerView.layoutManager = LinearLayoutManager(this)
+
+
+        pokemonRecyclerView.addItemDecoration(
+            androidx.recyclerview.widget.DividerItemDecoration(
+                this,
+                LinearLayoutManager.VERTICAL
+            )
+        )
     }
 }
