@@ -102,7 +102,7 @@ class PokemonAdapter(private val pokemonList: List<Pokemon>) :
             holder.typesContainer.addView(typeView, layoutParams)
         }
 
-        // Optional: Add click listener to show shiny status
+
         holder.itemView.setOnClickListener {
             if (pokemon.isShiny) {
                 android.widget.Toast.makeText(
